@@ -183,13 +183,11 @@ int executeIfRedirection(char **tokens)
     return exitCode;
 }
 
-
 void executeSerializedCode(char *tokens[], int serialCharacterIndex)
 {
 
     // make the && -> NULL
     tokens[serialCharacterIndex] = NULL;
-
 
     // try redirection
     int exitCodeOne = executeIfRedirection(tokens);
@@ -219,7 +217,6 @@ void executeSerializedCode(char *tokens[], int serialCharacterIndex)
         }
     }
 }
-
 
 int main()
 {
@@ -269,32 +266,9 @@ int main()
         {
             continue;
         }
-
-        int childProcessId = fork();
-
-        if (childProcessId < 0)
-        {
-            perror("Failed to create child process! \n");
-        }
-        else if (childProcessId == 0)
-        {
-            // child process
-            execvp(tokens[0], tokens);
-
-            printf("[SHELL|CHILD] Execeution Failed... \n");
-            _exit(127); // terminate the child
-        }
-        else
-        {
-            // parent process
-            waitpid(childProcessId, &status, 0);
-
-            if (WIFEXITED(status))
-            {
-                int exitCode = WEXITSTATUS(status);
-                printf("[Exit Code: %d ] \n", status);
-            }
-        }
+        
+        // execute
+        execute(tokens[0], tokens);
 
         /* Free allocated memory */
         for (i = 0; tokens[i] != NULL; i++)
