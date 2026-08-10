@@ -45,6 +45,23 @@ char **tokenize(char *line)
     return tokens;
 }
 
+// Function to check if background command
+int isBackgroundCommand(char **tokens)
+{
+    int index = 0;
+
+    for (index = 0; tokens[index] != NULL; index++)
+    {
+    };
+
+    if (strcmp(tokens[index - 1], "&") == 0)
+    {
+        return index - 1;
+    }
+
+    return -1;
+}
+
 /* Fuunction to check for serialized commands returns -1 if false else index of first &*/
 
 int containsSerializedCommand(char *tokens[])
@@ -60,11 +77,16 @@ int containsSerializedCommand(char *tokens[])
     return -1;
 }
 
-int execute(char *command, char *arguements[])
+int execute(char *command, char *arguements[], int isBackground)
 {
     int childProcessId = fork();
     int status;
     int exitCode = 0;
+
+    if (isBackground != -1)
+    {
+        arguements[isBackground] = NULL; // remove trailing &
+    }
 
     if (childProcessId < 0)
     {
@@ -80,12 +102,20 @@ int execute(char *command, char *arguements[])
     }
     else
     {
-        waitpid(childProcessId, &status, 0);
-
-        if (WIFEXITED(status))
+        if (isBackground != -1)
         {
-            exitCode = WEXITSTATUS(status);
-            printf("[Exit Code: %d ]\n", exitCode);
+            // background process start
+            printf("[SHELL|CHILD|BACKGROUND] Process with ID: %d started running in background \n", childProcessId);
+        }
+        else
+        {
+            waitpid(childProcessId, &status, 0);
+
+            if (WIFEXITED(status))
+            {
+                exitCode = WEXITSTATUS(status);
+                printf("[Exit Code: %d ]\n", exitCode);
+            }
         }
     }
 
@@ -93,7 +123,7 @@ int execute(char *command, char *arguements[])
 }
 
 /* Redirection of Input Output */
-int executeIfRedirection(char **tokens)
+int executeIfRedirection(char **tokens, int isBackground)
 {
     // check for < or >
     int redirectedIndex = -1;
@@ -115,6 +145,10 @@ int executeIfRedirection(char **tokens)
         return -1;
 
     // execute redirection
+    if (isBackground != -1)
+    {
+        tokens[isBackground] = NULL; // remove trailing &
+    }
 
     int childProcessId = fork();
 
@@ -171,12 +205,20 @@ int executeIfRedirection(char **tokens)
     }
     else
     {
-        waitpid(childProcessId, &status, 0);
-
-        if (WIFEXITED(status))
+        if (isBackground != -1)
         {
-            exitCode = WEXITSTATUS(status);
-            printf("[Exit Code: %d ] \n", exitCode);
+            // background process start
+            printf("[SHELL|CHILD|BACKGROUND] Process with ID: %d started running in background \n", childProcessId);
+        }
+        else
+        {
+            waitpid(childProcessId, &status, 0);
+
+            if (WIFEXITED(status))
+            {
+                exitCode = WEXITSTATUS(status);
+                printf("[Exit Code: %d ] \n", exitCode);
+            }
         }
     }
 
@@ -189,26 +231,29 @@ void executeSerializedCode(char *tokens[], int serialCharacterIndex)
     // make the && -> NULL
     tokens[serialCharacterIndex] = NULL;
 
+    int isBackgroundOne = isBackgroundCommand(tokens);
+
     // try redirection
-    int exitCodeOne = executeIfRedirection(tokens);
+    int exitCodeOne = executeIfRedirection(tokens, isBackgroundOne);
 
     if (exitCodeOne == -1)
     {
         // no redirection
-        exitCodeOne = execute(tokens[0], tokens);
+        exitCodeOne = execute(tokens[0], tokens, isBackgroundOne);
     }
 
     if (exitCodeOne == 0)
     {
         char **secondCommand = &tokens[serialCharacterIndex + 1];
+        int isBackgroundTwo = isBackgroundCommand(secondCommand);
 
         // try redirection
-        int exitCodeTwo = executeIfRedirection(secondCommand);
+        int exitCodeTwo = executeIfRedirection(secondCommand, isBackgroundTwo);
 
         if (exitCodeTwo == -1)
         {
             // execute normally no redirection
-            exitCodeTwo = execute(secondCommand[0], secondCommand);
+            exitCodeTwo = execute(secondCommand[0], secondCommand, isBackgroundTwo);
         }
 
         if (exitCodeTwo != 0)
@@ -223,10 +268,22 @@ int main()
     char line[MAX_INPUT_SIZE];
     char **tokens;
     int i;
-    int status;
+    int status, childPid;
 
     while (1)
     {
+
+        // Background process cleaning
+        while ((childPid = waitpid(-1, &status, WNOHANG)) > 0)
+        {
+            if (WIFEXITED(status))
+            {
+                int exitCode = WEXITSTATUS(status);
+                printf("[BACKGROUND] Process %d done (exit status: %d) \n", childPid, exitCode);
+            }
+        }
+
+        // Code starts here actual logic
         printf("shell> ");
 
         if (fgets(line, sizeof(line), stdin) == NULL)
@@ -237,12 +294,22 @@ int main()
         if (tokens[0] == NULL)
         {
             /* Ignore empty input */
+            /* Free allocated memory */
+            for (i = 0; tokens[i] != NULL; i++)
+                free(tokens[i]);
+
+            free(tokens);
             continue;
         }
 
         if (strcmp(tokens[0], "exit") == 0)
         {
             /*exit command */
+            /* Free allocated memory */
+            for (i = 0; tokens[i] != NULL; i++)
+                free(tokens[i]);
+
+            free(tokens);
             break;
         }
 
@@ -253,22 +320,35 @@ int main()
          * 4. In the parent process, wait for the child to complete.
          */
 
+        int isBackground = isBackgroundCommand(tokens);
+
         int serialized = containsSerializedCommand(tokens);
 
         if (serialized != -1)
         {
             executeSerializedCode(tokens, serialized);
+            /* Free allocated memory */
+            for (i = 0; tokens[i] != NULL; i++)
+                free(tokens[i]);
+
+            free(tokens);
             continue;
         }
 
-        int executionStatus = executeIfRedirection(tokens);
-        if (executionStatus == 0)
+        int executionStatus = executeIfRedirection(tokens, isBackground);
+        if (executionStatus !=-1)
         {
+            /* Free allocated memory */
+            for (i = 0; tokens[i] != NULL; i++)
+                free(tokens[i]);
+
+            free(tokens);
+
             continue;
         }
-        
+
         // execute
-        execute(tokens[0], tokens);
+        execute(tokens[0], tokens, isBackground);
 
         /* Free allocated memory */
         for (i = 0; tokens[i] != NULL; i++)
