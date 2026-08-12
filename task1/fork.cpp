@@ -21,4 +21,6 @@ int main()
         std::cout<< "Fork process ID: "<<getpid()<<std::endl;
         std::cout<< "Fork's child process ID: "<< childProcess <<std::endl;
     }
+
+    return 0;
 }
